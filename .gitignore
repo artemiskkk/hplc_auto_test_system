@@ -1,0 +1,42 @@
+# ===== 构建目录（Qt Creator 影子构建：.exe/.dll/.o/Makefile/部署的 Qt 运行库等）=====
+build-*/
+build/
+release/
+debug/
+# 部署运行库目录（Qt 运行时 DLL，属构建/部署产物）
+build_exe/
+
+# ===== Qt Creator / qmake 生成物 =====
+*.pro.user*
+.qmake.stash
+*.autosave
+moc_*.cpp
+moc_*.h
+ui_*.h
+qrc_*.cpp
+object_script.*
+*.o
+*.obj
+
+# ===== 二进制产物 =====
+*.exe
+*.dll
+# 3rdparty 调试静态库（体积巨大：CSG 66MB / QGDW 64MB / 645 21MB，发布构建用不到；保留 release 库）
+*Libd.a
+*Libd.lib
+
+# ===== 运行日志与报告 =====
+logs/
+test_report/
+*.log
+
+# ===== 升级固件包（体积大 + 属内部资料）=====
+DataBase/Upgrade/
+**/Upgrade/
+*.bin
+
+# ===== 操作系统 / IDE =====
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

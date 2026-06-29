@@ -1,0 +1,11 @@
+[Script_CCO_AddrManage_normal]
+#等待组网成功率达到目标门限的最大超时时长
+timerForReachThresld=1800
+#组网成功率目标门限
+netSucRateThresld=1
+#组网成功率达到目标门限后，继续等待一个超时时长
+timerAfterReachThresld=30
+#是否需要重新组网
+needBuildNet=true
+#设置新主节点地址
+ccoNewAddr=112233445566

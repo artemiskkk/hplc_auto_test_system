@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="950" viewBox="0 0 1600 950">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#111"/>
+    </marker>
+    <marker id="dashArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#111"/>
+    </marker>
+    <style>
+      .title{font:700 34px Arial,sans-serif;fill:#111}
+      .h{font:700 24px Arial,sans-serif;fill:#111}
+      .t{font:400 19px Arial,sans-serif;fill:#111}
+      .small{font:400 16px Arial,sans-serif;fill:#111}
+      .box{fill:#fff;stroke:#111;stroke-width:3}
+      .soft{fill:#f5f5f5;stroke:#111;stroke-width:3}
+      .group{fill:#fff;stroke:#111;stroke-width:4}
+      .dash{fill:#fff;stroke:#111;stroke-width:3;stroke-dasharray:10 8}
+      .line{stroke:#111;stroke-width:3;fill:none;marker-end:url(#arrow)}
+      .dline{stroke:#111;stroke-width:3;fill:none;stroke-dasharray:10 8;marker-end:url(#dashArrow)}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="950" fill="#fff"/>
+  <text x="800" y="48" class="title" text-anchor="middle">Serial CCO Retrofit Architecture</text>
+
+  <rect x="55" y="80" width="1090" height="680" rx="10" class="group"/>
+  <text x="600" y="118" class="h" text-anchor="middle">New Serial Host PC</text>
+
+  <rect x="95" y="155" width="205" height="58" rx="6" class="box"/>
+  <text x="198" y="191" class="t" text-anchor="middle">UI: Test Tree</text>
+  <rect x="350" y="155" width="205" height="58" rx="6" class="box"/>
+  <text x="453" y="191" class="t" text-anchor="middle">Test Scanner</text>
+  <rect x="605" y="155" width="205" height="58" rx="6" class="box"/>
+  <text x="708" y="191" class="t" text-anchor="middle">Test Runner</text>
+  <rect x="860" y="155" width="205" height="58" rx="6" class="box"/>
+  <text x="963" y="191" class="t" text-anchor="middle">Report / Logs</text>
+  <path d="M300 184 L350 184" class="line"/>
+  <path d="M555 184 L605 184" class="line"/>
+  <path d="M810 184 L860 184" class="line"/>
+
+  <rect x="95" y="260" width="300" height="410" rx="8" class="soft"/>
+  <text x="245" y="296" class="h" text-anchor="middle">DataBase CSV</text>
+  <rect x="130" y="325" width="230" height="45" rx="4" class="box"/>
+  <text x="245" y="354" class="small" text-anchor="middle">TestCase.csv</text>
+  <rect x="130" y="382" width="230" height="45" rx="4" class="box"/>
+  <text x="245" y="411" class="small" text-anchor="middle">ConcentratorInfo.csv</text>
+  <rect x="130" y="439" width="230" height="45" rx="4" class="box"/>
+  <text x="245" y="468" class="small" text-anchor="middle">MeterInfo.csv</text>
+  <rect x="130" y="496" width="230" height="45" rx="4" class="box"/>
+  <text x="245" y="525" class="small" text-anchor="middle">SchemeInfo.csv</text>
+  <rect x="130" y="553" width="230" height="45" rx="4" class="box"/>
+  <text x="245" y="582" class="small" text-anchor="middle">DvcSerialInfo.csv</text>
+  <rect x="130" y="610" width="230" height="45" rx="4" class="box"/>
+  <text x="245" y="639" class="small" text-anchor="middle">ScriptPara</text>
+  <path d="M245 260 L245 213" class="line"/>
+  <path d="M395 465 C480 465 520 213 605 213" class="line"/>
+
+  <rect x="455" y="290" width="330" height="250" rx="8" class="soft"/>
+  <text x="620" y="326" class="h" text-anchor="middle">SgHplcTestScript.dll</text>
+  <rect x="500" y="360" width="240" height="58" rx="6" class="box"/>
+  <text x="620" y="396" class="t" text-anchor="middle">ReflectFactory</text>
+  <rect x="500" y="455" width="240" height="58" rx="6" class="box"/>
+  <text x="620" y="491" class="t" text-anchor="middle">TestCase Scripts</text>
+  <path d="M740 389 C800 389 800 484 740 484" class="dline"/>
+
+  <rect x="835" y="285" width="305" height="330" rx="8" class="soft"/>
+  <text x="987" y="322" class="h" text-anchor="middle">SerialCcoScriptHost</text>
+  <text x="987" y="350" class="small" text-anchor="middle">AbstractScriptHost API</text>
+  <rect x="870" y="375" width="125" height="70" rx="6" class="box"/>
+  <text x="932" y="404" class="small" text-anchor="middle">Serial</text>
+  <text x="932" y="427" class="small" text-anchor="middle">Manager</text>
+  <rect x="1010" y="375" width="105" height="70" rx="6" class="box"/>
+  <text x="1062" y="404" class="small" text-anchor="middle">Frame</text>
+  <text x="1062" y="427" class="small" text-anchor="middle">Buffer</text>
+  <rect x="870" y="475" width="125" height="70" rx="6" class="box"/>
+  <text x="932" y="504" class="small" text-anchor="middle">Virtual</text>
+  <text x="932" y="527" class="small" text-anchor="middle">Fixture ACK</text>
+  <rect x="1010" y="475" width="105" height="70" rx="6" class="box"/>
+  <text x="1062" y="504" class="small" text-anchor="middle">Breaker</text>
+  <text x="1062" y="527" class="small" text-anchor="middle">Adapter</text>
+
+  <path d="M708 213 L708 290" class="line"/>
+  <path d="M785 484 L835 484" class="line"/>
+  <text x="810" y="470" class="small" text-anchor="middle">sendMsg2Dvc</text>
+  <path d="M835 515 L785 515" class="dline"/>
+  <text x="810" y="540" class="small" text-anchor="middle">processMsg / ACK</text>
+
+  <rect x="705" y="680" width="215" height="58" rx="6" class="box"/>
+  <text x="813" y="716" class="t" text-anchor="middle">CCO COM Port</text>
+  <path d="M987 615 L987 650 L813 650 L813 680" class="line"/>
+
+  <rect x="1200" y="170" width="260" height="170" rx="8" class="soft"/>
+  <text x="1330" y="210" class="h" text-anchor="middle">Scope: 159 Cases</text>
+  <line x1="1230" y1="228" x2="1430" y2="228" stroke="#111" stroke-width="2" stroke-dasharray="8 6"/>
+  <text x="1255" y="270" class="t">Run</text><text x="1410" y="270" class="t" text-anchor="end">140</text>
+  <text x="1255" y="300" class="t">Adjust</text><text x="1410" y="300" class="t" text-anchor="end">15</text>
+  <text x="1255" y="330" class="t">Not Covered</text><text x="1410" y="330" class="t" text-anchor="end">4</text>
+
+  <rect x="1215" y="455" width="210" height="65" rx="6" class="box"/>
+  <text x="1320" y="495" class="t" text-anchor="middle">Smart Breaker</text>
+  <rect x="1190" y="575" width="260" height="58" rx="6" class="box"/>
+  <text x="1320" y="611" class="t" text-anchor="middle">STA / Environment Power</text>
+  <rect x="1190" y="665" width="260" height="58" rx="6" class="dash"/>
+  <text x="1320" y="701" class="t" text-anchor="middle">Not CCO Self Power</text>
+  <path d="M1115 510 L1215 488" class="dline"/>
+  <path d="M1320 520 L1320 575" class="dline"/>
+  <path d="M1320 633 L1320 665" class="dline"/>
+
+  <rect x="565" y="815" width="150" height="58" rx="6" class="box"/>
+  <text x="640" y="851" class="t" text-anchor="middle">CCO</text>
+  <rect x="780" y="815" width="215" height="58" rx="6" class="box"/>
+  <text x="888" y="851" class="t" text-anchor="middle">HPLC Network</text>
+  <rect x="1060" y="815" width="150" height="58" rx="6" class="box"/>
+  <text x="1135" y="851" class="t" text-anchor="middle">STA</text>
+  <rect x="1275" y="815" width="175" height="58" rx="6" class="box"/>
+  <text x="1362" y="851" class="t" text-anchor="middle">Real Meter</text>
+
+  <path d="M813 738 L813 775 L640 775 L640 815" class="line"/>
+  <path d="M715 844 L780 844" class="line"/>
+  <path d="M995 844 L1060 844" class="line"/>
+  <path d="M1210 844 L1275 844" class="line"/>
+  <path d="M1362 873 C1362 925 640 925 640 873 C640 790 813 790 813 738 C813 650 930 650 987 615" class="dline"/>
+  <text x="640" y="790" class="small" text-anchor="middle">Serial 376.2</text>
+  <text x="887" y="790" class="small" text-anchor="middle">Power-line carrier</text>
+  <text x="1185" y="790" class="small" text-anchor="middle">645 / OOP / 698</text>
+  <text x="960" y="910" class="small" text-anchor="middle">Result returns: Meter -> STA -> HPLC -> CCO -> COM -> processMsg(CCO_GW)</text>
+
+  <rect x="60" y="785" width="335" height="110" rx="8" class="soft"/>
+  <path d="M90 825 L165 825" class="line"/>
+  <text x="190" y="831" class="small">Normal script / data flow</text>
+  <path d="M90 865 L165 865" class="dline"/>
+  <text x="190" y="871" class="small">Virtual ACK / optional control</text>
+</svg>

@@ -1,0 +1,18 @@
+# Qt Creator user files
+*.pro.user
+*.pro.user.*
+
+# Backup files
+*.bak
+
+# IDE / Tool configs
+.vscode/
+.claude/
+
+# Build output
+build/
+*.o
+*.obj
+moc_*.cpp
+ui_*.h
+qrc_*.cpp

@@ -1,0 +1,17 @@
+[Script_CcoSearchMeter_PastTime]
+#等待成功率达到目标门限的允许时长(单位:秒)
+timerForReachThresld=1800 
+#成功率目标门限
+netSucRateThresld=1.0
+#成功率达到目标门限后，继续等待时长(单位:秒)
+timerAfterReachThresld=3600
+#每次添加档案个数
+addCntPerTime=5
+#每次查询拓扑个数
+topoCntPerTime=5
+#是否需要组网
+needBuildNet=true
+#脚本运行结束是否需要断电
+needPowerOff=true
+#搜表持续时间(min)
+activeTime=6

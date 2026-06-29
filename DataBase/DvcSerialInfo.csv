@@ -1,0 +1,2 @@
+﻿DvcId,DvcName,PortName,BaudRate,DataBits,StopBits,Parity
+1,抄控器,COM12,9600,8,1,Even

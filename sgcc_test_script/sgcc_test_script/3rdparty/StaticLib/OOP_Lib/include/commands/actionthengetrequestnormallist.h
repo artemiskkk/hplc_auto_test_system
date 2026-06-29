@@ -1,0 +1,56 @@
+#ifndef ACTIONTHENGETREQUESTNORMALLIST_H
+#define ACTIONTHENGETREQUESTNORMALLIST_H
+
+#include <QObject>
+#include "../frameoopbase.h"
+
+using namespace std;
+
+namespace  object_oriented_electic_data_exchange_protocol {
+
+/**
+ * @brief 操作若干个对象方法后读取若干个对象属性请求
+ */
+#ifdef UNIT_TEST
+class ActionThenGetRequestNormalList : public FrameOOPBase
+#else
+class OOP_LIB_EXPORT ActionThenGetRequestNormalList : public FrameOOPBase
+#endif
+{
+public:
+    ActionThenGetRequestNormalList();
+    ~ActionThenGetRequestNormalList() override;
+
+    /**
+     * @brief ActionThenGetRequestNormalList
+     * @param ctrl_field  控制域
+     * @param address_field  地址域
+     * @param framing_field  分帧控制域
+     */
+    //ActionThenGetRequestNormalList(CtrlField ctrl_field,AddressField address_field,FrameFormatField  framing_field);
+    ActionThenGetRequestNormalList(CtrlField ctrl_field,AddressField address_field);
+
+    PIID piid_;//!< 服务序号-优先级
+    QList<AActionhenGetNormal> list_action_then_get_normal_;//!< 若干个操作对象方法后读取对象属性
+    //TimeTagField time_tag_field_;
+public:
+    /**
+     * @brief 将16进制格式数据，解析为数据单元
+     * @param data
+     */
+    void DecodeFrameDataField(QByteArray data) override;
+
+    uchar GetActionThenGetNormalListSize();
+private:
+    /**
+     * @brief 将数据单元编码为16进制格式数据
+     * @return 返回编码好的字节串
+     */
+    QByteArray EncodeFrameDataField() override;
+
+    uchar size_;//!< 操作对象方法后读取对象属性个数
+};
+
+}
+
+#endif // ACTIONTHENGETREQUESTNORMALLIST_H

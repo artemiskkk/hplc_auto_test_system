@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1700" height="980" viewBox="0 0 1700 980">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#111"/>
+    </marker>
+    <style>
+      .title{font:700 32px Arial,sans-serif;fill:#111}
+      .h{font:700 21px Arial,sans-serif;fill:#111}
+      .t{font:400 17px Arial,sans-serif;fill:#111}
+      .small{font:400 15px Arial,sans-serif;fill:#111}
+      .box{fill:#fff;stroke:#111;stroke-width:3}
+      .soft{fill:#f5f5f5;stroke:#111;stroke-width:3}
+      .dash{fill:#fff;stroke:#111;stroke-width:3;stroke-dasharray:9 7}
+      .line{stroke:#111;stroke-width:3;fill:none;marker-end:url(#arrow)}
+      .dline{stroke:#111;stroke-width:3;fill:none;stroke-dasharray:9 7;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1700" height="980" fill="#fff"/>
+  <text x="850" y="50" class="title" text-anchor="middle">Serial CCO Test Execution Flow</text>
+
+  <rect x="40" y="90" width="145" height="68" rx="6" class="box"/><text x="112" y="118" class="h" text-anchor="middle">1</text><text x="112" y="145" class="t" text-anchor="middle">Start Host</text>
+  <rect x="230" y="90" width="145" height="68" rx="6" class="box"/><text x="302" y="118" class="h" text-anchor="middle">2</text><text x="302" y="145" class="t" text-anchor="middle">Load DLL</text>
+  <rect x="420" y="90" width="175" height="68" rx="6" class="box"/><text x="507" y="118" class="h" text-anchor="middle">3</text><text x="507" y="145" class="t" text-anchor="middle">Read TestCase.csv</text>
+  <rect x="640" y="90" width="160" height="68" rx="6" class="box"/><text x="720" y="118" class="h" text-anchor="middle">4</text><text x="720" y="145" class="t" text-anchor="middle">Build Test Tree</text>
+  <rect x="845" y="90" width="150" height="68" rx="6" class="box"/><text x="920" y="118" class="h" text-anchor="middle">5</text><text x="920" y="145" class="t" text-anchor="middle">Select Cases</text>
+  <rect x="1040" y="82" width="185" height="84" rx="6" class="soft"/><text x="1132" y="117" class="h" text-anchor="middle">Feasibility</text><text x="1132" y="145" class="t" text-anchor="middle">Gate</text>
+  <path d="M185 124 L230 124" class="line"/><path d="M375 124 L420 124" class="line"/><path d="M595 124 L640 124" class="line"/><path d="M800 124 L845 124" class="line"/><path d="M995 124 L1040 124" class="line"/>
+
+  <rect x="1280" y="65" width="105" height="45" rx="5" class="box"/><text x="1332" y="94" class="t" text-anchor="middle">Run</text>
+  <rect x="1280" y="125" width="105" height="45" rx="5" class="box"/><text x="1332" y="154" class="t" text-anchor="middle">Adjust</text>
+  <rect x="1280" y="185" width="135" height="45" rx="5" class="dash"/><text x="1347" y="214" class="t" text-anchor="middle">Not Covered</text>
+  <path d="M1225 115 L1280 88" class="line"/><path d="M1225 130 L1280 148" class="line"/><path d="M1225 145 L1280 208" class="dline"/>
+
+  <rect x="120" y="280" width="175" height="70" rx="6" class="box"/><text x="207" y="309" class="h" text-anchor="middle">Load CSV</text><text x="207" y="335" class="t" text-anchor="middle">Archives</text>
+  <rect x="350" y="280" width="155" height="70" rx="6" class="box"/><text x="427" y="309" class="h" text-anchor="middle">Load</text><text x="427" y="335" class="t" text-anchor="middle">ScriptPara</text>
+  <rect x="560" y="280" width="145" height="70" rx="6" class="box"/><text x="632" y="323" class="t" text-anchor="middle">setScript</text>
+  <rect x="760" y="280" width="165" height="70" rx="6" class="box"/><text x="842" y="323" class="t" text-anchor="middle">ReflectFactory</text>
+  <rect x="980" y="280" width="220" height="70" rx="6" class="box"/><text x="1090" y="309" class="t" text-anchor="middle">addAddrsInfo</text><text x="1090" y="335" class="t" text-anchor="middle">+ config</text>
+  <rect x="1255" y="280" width="130" height="70" rx="6" class="box"/><text x="1320" y="323" class="t" text-anchor="middle">execute</text>
+  <path d="M1332 170 C1332 235 207 235 207 280" class="line"/>
+  <path d="M295 315 L350 315" class="line"/><path d="M505 315 L560 315" class="line"/><path d="M705 315 L760 315" class="line"/><path d="M925 315 L980 315" class="line"/><path d="M1200 315 L1255 315" class="line"/>
+
+  <rect x="80" y="480" width="210" height="72" rx="6" class="box"/><text x="185" y="508" class="t" text-anchor="middle">sendMsg2Dvc</text><text x="185" y="532" class="small" text-anchor="middle">(CCO_GW)</text>
+  <rect x="350" y="480" width="210" height="72" rx="6" class="box"/><text x="455" y="508" class="t" text-anchor="middle">Serial Write</text><text x="455" y="532" class="small" text-anchor="middle">376.2 Frame</text>
+  <rect x="620" y="480" width="185" height="72" rx="6" class="box"/><text x="712" y="508" class="t" text-anchor="middle">CCO over</text><text x="712" y="532" class="small" text-anchor="middle">HPLC</text>
+  <rect x="865" y="480" width="205" height="72" rx="6" class="box"/><text x="967" y="508" class="t" text-anchor="middle">STA / Real Meter</text><text x="967" y="532" class="small" text-anchor="middle">Respond</text>
+  <rect x="1130" y="480" width="185" height="72" rx="6" class="box"/><text x="1222" y="508" class="t" text-anchor="middle">Serial</text><text x="1222" y="532" class="small" text-anchor="middle">Uplink</text>
+  <rect x="1375" y="480" width="210" height="72" rx="6" class="box"/><text x="1480" y="508" class="t" text-anchor="middle">processMsg</text><text x="1480" y="532" class="small" text-anchor="middle">(CCO_GW)</text>
+  <path d="M1320 350 C1320 430 185 430 185 480" class="line"/>
+  <path d="M290 516 L350 516" class="line"/><path d="M560 516 L620 516" class="line"/><path d="M805 516 L865 516" class="line"/><path d="M1070 516 L1130 516" class="line"/><path d="M1315 516 L1375 516" class="line"/>
+
+  <rect x="310" y="710" width="190" height="70" rx="6" class="box"/><text x="405" y="739" class="h" text-anchor="middle">State</text><text x="405" y="765" class="t" text-anchor="middle">Machine</text>
+  <rect x="590" y="710" width="160" height="70" rx="6" class="box"/><text x="670" y="739" class="h" text-anchor="middle">Statistics</text><text x="670" y="765" class="t" text-anchor="middle">Result</text>
+  <rect x="840" y="710" width="160" height="70" rx="6" class="box"/><text x="920" y="739" class="h" text-anchor="middle">PASS</text><text x="920" y="765" class="t" text-anchor="middle">/ FAIL</text>
+  <path d="M1480 552 C1480 650 405 650 405 710" class="line"/>
+  <path d="M500 745 L590 745" class="line"/><path d="M750 745 L840 745" class="line"/>
+  <path d="M405 710 C405 620 185 620 185 552" class="line"/>
+  <text x="250" y="640" class="small">next frame / next meter</text>
+
+  <rect x="1110" y="700" width="170" height="58" rx="6" class="dash"/><text x="1195" y="735" class="t" text-anchor="middle">controlDvc</text>
+  <rect x="1320" y="700" width="230" height="58" rx="6" class="dash"/><text x="1435" y="724" class="small" text-anchor="middle">same dvcType</text><text x="1435" y="746" class="small" text-anchor="middle">idList / cmd</text>
+  <rect x="1320" y="810" width="170" height="58" rx="6" class="dash"/><text x="1405" y="845" class="t" text-anchor="middle">Virtual ACK</text>
+  <rect x="1090" y="810" width="210" height="58" rx="6" class="dash"/><text x="1195" y="845" class="t" text-anchor="middle">Breaker optional</text>
+  <path d="M500 745 L1110 729" class="dline"/>
+  <path d="M1280 729 L1320 729" class="dline"/>
+  <path d="M1435 758 L1435 810" class="dline"/>
+  <path d="M1320 839 L1300 839" class="dline"/>
+  <path d="M1405 810 C1270 650 550 650 500 710" class="dline"/>
+</svg>

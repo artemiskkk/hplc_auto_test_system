@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/ui/icons">
+        <file>combo_down.xpm</file>
+        <file>app.ico</file>
+        <file>check_on.png</file>
+        <file>check_off.png</file>
+    </qresource>
+</RCC>
