@@ -133,15 +133,3 @@ sgcc_auto_test/
 
 > 直连 CCO 模式下约 144 项可直接跑通；事件主动上报、通信地址请求、20 规范确认后/恢复默认等
 > 依赖表端主动上报的项目需配合**虚拟表**模拟。完整明细见 `DataBase/TestCase.csv`。
-
----
-
-## 界面截图
-
-> 将实际运行截图放到 `docs/screenshots/` 下（文件名如下），GitHub 会自动渲染。
-
-| 截图 | 说明 |
-|---|---|
-| ![主界面](docs/screenshots/main.png) | 主界面：左侧用例树、中部执行步骤、右侧运行日志与统计环 |
-| ![参数配置](docs/screenshots/param-config.png) | 参数配置：虚拟表地址 / 645·698 应答项 / 波特率协商 |
-| ![测试报告](docs/screenshots/report.png) | 测试报告：通过率统计与 CSV 结果 |
