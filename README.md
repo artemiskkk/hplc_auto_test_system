@@ -23,8 +23,9 @@
 └─────────────────────────────┘
 ```
 
-- **software_app**：上位机程序（UI、串口、调度、报告、虚拟表、断路器控制）。
-- **sgcc_test_script**：测试脚本插件源码，编译成 `SgHplcTestScript.dll`，由上位机经 `QPluginLoader` 加载。
+- **software_app**：上位机程序（UI、串口、调度、报告、虚拟表、断路器控制），本仓库主体。
+- **SgHplcTestScript.dll**：测试脚本插件，由上位机经 `QPluginLoader` 加载。
+  其源码 `sgcc_test_script` **单独维护、不纳入本仓库**，编译产物 DLL 放到运行目录即可。
 - **直连 CCO 模式（directCcoMode）**：无工装板，STA 上下电/复位等设备控制由上位机虚拟应答；
   `SetBaudRate` 针对 CCO 时会真改本机串口波特率以跟随。
 
@@ -42,16 +43,14 @@ sgcc_auto_test/
 │       ├── device/               DeviceControl / BreakerCtrl / VirtualMeter
 │       ├── core/                 Scheduler / Reporter / ConfigLoader
 │       └── config/               AppConfig
-├── sgcc_test_script/
-│   └── sgcc_test_script/         插件源码（SgHplcTestScript.pro）
-│       ├── TestCase/             各测试用例脚本（抄表/组网/升级/广播校时/20规范…）
-│       ├── CommonModule/         BuildNetwork / BuildNetworkDetect 等公共模块
-│       └── 3rdparty/StaticLib/   QGDW_376_2 / DLT_645 / OOP / QCSG 协议库（含头与 release .a）
 ├── DataBase/                     运行档案与配置（见下）
 └── .gitignore
 ```
 
-> 注：编译产物（`build-*/`、部署 DLL、debug 静态库、固件 `*.bin`、`logs/`、`test_report/`）已被 `.gitignore` 排除，不入库。
+> 测试脚本插件源码 `sgcc_test_script`（TestCase / CommonModule / 3rdparty 协议库）**单独维护、不在本仓库**，
+> 编译出的 `SgHplcTestScript.dll` 放到运行目录即可。
+>
+> 编译产物（`build-*/`、部署 DLL、debug 静态库、固件 `*.bin`、`logs/`、`test_report/`）也已被 `.gitignore` 排除，不入库。
 
 ---
 
@@ -60,7 +59,7 @@ sgcc_auto_test/
 - **工具链**：Qt **5.9.9 MinGW 32-bit**（与 CCO 端工具链一致）。
 - **插件与上位机分别编译**，且都用 **Release**（插件与宿主的 Debug/Release 必须一致，否则插件加载不上）。
 
-1. **插件**：用 Qt Creator 打开 `sgcc_test_script/sgcc_test_script/SgHplcTestScript.pro` → MinGW 32-bit Release → 构建，
+1. **插件**（源码单独维护，不在本仓库）：用 Qt Creator 打开 `SgHplcTestScript.pro` → MinGW 32-bit Release → 构建，
    产出 `SgHplcTestScript.dll`，放到上位机运行目录的 `DataBase/Scripts/` 下。
 2. **上位机**：打开 `software_app/software_app.pro` → 同套件 Release → 构建。
 
