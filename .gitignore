@@ -35,6 +35,9 @@ DataBase/Upgrade/
 **/Upgrade/
 *.bin
 
+# ===== 测试脚本插件源码（不入库，单独维护）=====
+sgcc_test_script/
+
 # ===== 操作系统 / IDE =====
 Thumbs.db
 desktop.ini
