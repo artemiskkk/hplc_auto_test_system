@@ -57,6 +57,8 @@ QFrame* chip(const QString &key, QLabel **valOut, const QString &initVal = "-")
     QLabel *val = lbl(initVal, 10, true, "#1F2A37");
     val->setObjectName("metricVal");
     val->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    val->setMinimumWidth(0);
+    val->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     *valOut = val;
     v->addWidget(val);
     return f;
@@ -100,14 +102,90 @@ QString normalizePath(const QString &path)
 bool caseUnsupported(int tcID)
 {
     static const QSet<int> s = QSet<int>()
-        << 117 << 118 << 119 << 120
-        << 128 << 130
-        << 175
-        << 183 << 185 << 186 << 187
-        << 188 << 189 << 190 << 191;
+        << 119 << 120
+        << 190 << 191;
     return s.contains(tcID);
 }
 const char *kUnsupportedTip = "该用例依赖事件触发、主动上报或完整表端仿真，暂不可执行";
+
+bool isVirtualMeterEndpoint(DvcType dvcType)
+{
+    return dvcType == SingleMeter || dvcType == ThreeMeter
+        || dvcType == SingleSTA || dvcType == ThreeSTA;
+}
+
+QString meterAddressText(const MeterInfo &meter)
+{
+    return QString(QByteArray(reinterpret_cast<const char*>(meter.mtrAddr), 6).toHex().toUpper());
+}
+
+QString normalizedHexAddr12(const QString &raw)
+{
+    return QString(raw).trimmed().remove(' ').toUpper();
+}
+
+bool isHexAddr12(const QString &hex)
+{
+    if (hex.size() != 12)
+        return false;
+    static const QString kHexSet = "0123456789ABCDEF";
+    for (int i = 0; i < hex.size(); ++i) {
+        if (!kHexSet.contains(hex.at(i)))
+            return false;
+    }
+    return true;
+}
+
+void syncVirtualMeterArchive(Database *db, const VirtualMeter *virtualMeter)
+{
+    if (!db || !virtualMeter || !AppConfig::instance().virtualMeterSerialEnabled)
+        return;
+
+    const QString addr = normalizedHexAddr12(virtualMeter->meterAddress());
+    if (!isHexAddr12(addr)) {
+        Logger::instance().error(QString("虚拟表地址无效，无法生成运行期表档案：%1").arg(addr));
+        return;
+    }
+
+    MeterInfo meter;
+    if (!db->meters.isEmpty())
+        meter = db->meters.first();
+
+    if (meter.mtrID <= 0)
+        meter.mtrID = 1;
+    const QString oldAddr = db->meters.isEmpty() ? QString() : meterAddressText(meter);
+    ModelUtil::parseBcdAddr(addr, meter.mtrAddr);
+    meter.slotPosition = SingleMeter;
+    meter.realPhase = 1;      // A phase
+    meter.phaseSeq = 0;
+    meter.prtcl = 3;          // OOP/DLT698
+    for (int i = 0; i < 6; ++i)
+        meter.CJQAddr[i] = 0;
+    if (meter.dvcId <= 0)
+        meter.dvcId = 1;
+
+    db->meters.clear();
+    db->meters << meter;
+
+    if (db->schemes.isEmpty()) {
+        SchemeCfgInfo scheme;
+        scheme.schmID = 1;
+        scheme.ctrID = db->concentrators.isEmpty() ? 1 : db->concentrators.first().ctrID;
+        scheme.mtrIDs << meter.mtrID;
+        db->schemes << scheme;
+    } else {
+        for (SchemeCfgInfo &scheme : db->schemes) {
+            scheme.mtrIDs.clear();
+            scheme.mtrIDs << meter.mtrID;
+        }
+    }
+
+    Logger::instance().info(QString("运行期虚拟表档案已同步：MeterId=%1 地址=%2%3 Protocol=698 DvcId=%4")
+                            .arg(meter.mtrID)
+                            .arg(addr)
+                            .arg(oldAddr.isEmpty() || oldAddr == addr ? QString() : QString(" (CSV=%1)").arg(oldAddr))
+                            .arg(meter.dvcId));
+}
 
 bool looksLikeDataBaseDir(const QString &path)
 {
@@ -201,6 +279,11 @@ QString serialFormatText(const SerialEndpoint &ep, const QString &role)
         .arg(stopBitsCode(ep.stopBits));
 }
 
+QString serialSummaryText(const SerialEndpoint &ep)
+{
+    return ep.portName.toUpper();
+}
+
 class DragMover : public QObject
 {
 public:
@@ -232,6 +315,8 @@ private:
 // ===================== 构造 =====================
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
+    qRegisterMetaType<CaseResult>("CaseResult");
+
     setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     setMinimumSize(1360, 800);
     resize(1480, 900);
@@ -249,28 +334,58 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     m_host->setSerial(m_serial);
     m_host->setDeviceControl(m_devctrl);
     m_virtualMeter->setSerial(m_serial);
+    m_host->setVirtualMeter(m_virtualMeter);
     m_sched->setHost(m_host);
 
     connect(m_serial, &SerialComm::bytesReceived, this, [this](DvcType dvcType, int dvcId, const QByteArray &data) {
-        if (m_virtualMeter)
-            m_virtualMeter->handleBytes(dvcType, dvcId, data);
+        const AppConfig &cfg = AppConfig::instance();
+        if (cfg.virtualMeterSerialEnabled && isVirtualMeterEndpoint(dvcType)) {
+            if (m_virtualMeter)
+                m_virtualMeter->handleBytes(dvcType, dvcId, data);
+            // The virtual meter owns the real reply. The script still observes
+            // the request so its recvFlag/expected response can validate 02F1;
+            // ScriptHost suppresses the script's legacy meter-side send.
+            m_host->onBytesReceived(dvcType, dvcId, data);
+            return;
+        }
+        if (m_virtualMeter && cfg.directCcoMode && !cfg.virtualMeterSerialEnabled
+            && m_virtualMeter->handleBytes(dvcType, dvcId, data))
+            return;
         m_host->onBytesReceived(dvcType, dvcId, data);
     });
     connect(m_serial, &SerialComm::portError, this, [this](DvcType dvcType, int dvcId, const QString &msg) {
         Logger::instance().error(QString("串口异常 type=%1,dvcId=%2: %3").arg(int(dvcType)).arg(dvcId).arg(msg));
-        if (!m_db.concentrators.isEmpty()
-            && dvcId == m_db.concentrators.first().dvcId
-            && dvcType == m_db.concentrators.first().slotPosition
-            && !m_serial->isOpen(dvcType, dvcId)) {
-            setCcoConnectedUi(false);
+        if (!m_serial->isOpen(dvcType, dvcId)) {
+            bool ccoOpen = false;
+            if (!m_db.concentrators.isEmpty()) {
+                const ConcentratorInfo &cco = m_db.concentrators.first();
+                ccoOpen = m_serial->isOpen(cco.slotPosition, cco.dvcId);
+            }
+            bool virtualMeterOpen = false;
+            for (const MeterInfo &meter : m_db.meters) {
+                if (meter.slotPosition == SingleMeter || meter.slotPosition == ThreeMeter) {
+                    virtualMeterOpen = m_serial->isOpen(meter.slotPosition, meter.dvcId);
+                    break;
+                }
+            }
+            setSerialConnectedUi(ccoOpen, virtualMeterOpen,
+                                 m_comPortVal->text(), m_comPortVal->toolTip());
         }
     });
-    connect(&Logger::instance(), &Logger::lineLogged, this, &MainWindow::appendLog);
-    connect(m_sched, &Scheduler::caseStarted,  this, &MainWindow::onCaseStarted);
-    connect(m_sched, &Scheduler::caseProgress, this, &MainWindow::onCaseProgress);
-    connect(m_sched, &Scheduler::caseFinished, this, &MainWindow::onCaseFinished);
+    // Script callbacks can complete a case while serial/control callbacks are still
+    // unwinding. Queue all widget mutations so QTableWidget is never changed from
+    // inside that nested callback chain while its view is painting.
+    connect(&Logger::instance(), &Logger::lineLogged,
+            this, &MainWindow::appendLog, Qt::QueuedConnection);
+    connect(m_sched, &Scheduler::caseStarted,
+            this, &MainWindow::onCaseStarted, Qt::QueuedConnection);
+    connect(m_sched, &Scheduler::caseProgress,
+            this, &MainWindow::onCaseProgress, Qt::QueuedConnection);
+    connect(m_sched, &Scheduler::caseFinished,
+            this, &MainWindow::onCaseFinished, Qt::QueuedConnection);
     connect(m_sched, &Scheduler::caseResult,   m_reporter, &Reporter::add);
-    connect(m_sched, &Scheduler::caseResult,   this, &MainWindow::onCaseResult);
+    connect(m_sched, &Scheduler::caseResult,
+            this, &MainWindow::onCaseResult, Qt::QueuedConnection);
 
     buildUi();
 
@@ -469,8 +584,6 @@ void MainWindow::buildUi()
     sbItem("项目: sgcc_test_project");
     sbl->addStretch();
     m_sbLogCount = sbItem("日志: 0 条");
-    m_sbCpu      = sbItem("CPU: -");
-    m_sbMem      = sbItem("内存: -");
     m_sbTime     = sbItem("--:--:--");
     m_sbStatus   = sbItem("系统运行正常");
     m_sbStatus->setStyleSheet("color:#7CE0A0;");
@@ -513,15 +626,14 @@ QWidget* MainWindow::buildToolbar()
 
     m_connectCcoBtn = addButton("串口配置", "配置并连接 CCO 串口", &MainWindow::onConnectCco, "commandPrimary");
     addDivider();
-    addButton("开始检测", "开始执行当前测试用例", &MainWindow::onStart, "commandSuccess");
-    addButton("中止检测", "停止当前测试任务", &MainWindow::onStop, "commandDanger");
+    m_runControlBtn = addButton("开始检测", "开始执行当前测试用例", &MainWindow::onRunControl, "commandSuccess");
     addDivider();
     addButton("查看日志", "打开运行日志存储目录", &MainWindow::onViewLog);
     addButton("清空日志", "清空右侧运行日志", &MainWindow::onClearLog);
     addDivider();
     addButton("升级文件", "选择升级文件", &MainWindow::onUpgradeFile);
     addButton("查看报告", "打开自动保存的报告目录", &MainWindow::onBrowseReport);
-    addButton("参数配置", "配置虚拟表地址和 645/698 应答项", &MainWindow::onParamConfig);
+    addButton("虚拟表功能", "配置自动应答并生成、发送 645/698 报文", &MainWindow::onParamConfig);
     h->addStretch();
     return bar;
 }
@@ -537,7 +649,7 @@ QWidget* MainWindow::buildStatusInfo()
     // 频段选择
     QFrame *fq = new QFrame;
     fq->setObjectName("metricChip");
-    fq->setMinimumWidth(168);
+    fq->setFixedWidth(150);
     fq->setMaximumHeight(58);
     QVBoxLayout *fv = new QVBoxLayout(fq);
     fv->setContentsMargins(10, 5, 10, 6); fv->setSpacing(2);
@@ -551,10 +663,21 @@ QWidget* MainWindow::buildStatusInfo()
     fv->addWidget(m_freqCombo);
     h->addWidget(fq);
 
-    h->addWidget(chip("系统状态",  &m_sysState,   "未就绪"));
-    h->addWidget(chip("COM 端口",  &m_comPortVal, "未连接"));
-    h->addWidget(chip("CCO 设备",  &m_ccoVal,     "离线"));
-    h->addWidget(chip("STA 设备",  &m_staVal,     "离线"));
+    QFrame *sysChip = chip("系统状态", &m_sysState, "未就绪");
+    sysChip->setFixedWidth(80);
+    h->addWidget(sysChip);
+
+    QFrame *comChip = chip("COM 端口", &m_comPortVal, "未连接");
+    comChip->setFixedWidth(180);
+    h->addWidget(comChip);
+
+    QFrame *ccoChip = chip("CCO 设备", &m_ccoVal, "离线");
+    ccoChip->setFixedWidth(80);
+    h->addWidget(ccoChip);
+
+    QFrame *meterChip = chip("虚拟表", &m_staVal, "离线");
+    meterChip->setFixedWidth(92);
+    h->addWidget(meterChip);
     m_sysState->setStyleSheet("color:#D14343;font-weight:bold;");
     m_ccoVal->setStyleSheet("color:#D14343;font-weight:bold;");
     m_staVal->setStyleSheet("color:#D14343;font-weight:bold;");
@@ -562,7 +685,7 @@ QWidget* MainWindow::buildStatusInfo()
     // 进度
     QFrame *pf = new QFrame;
     pf->setObjectName("metricChip");
-    pf->setMinimumWidth(190);
+    pf->setFixedWidth(180);
     pf->setMaximumHeight(58);
     QVBoxLayout *pv = new QVBoxLayout(pf);
     pv->setContentsMargins(10, 5, 10, 6); pv->setSpacing(3);
@@ -577,11 +700,21 @@ QWidget* MainWindow::buildStatusInfo()
     pv->addWidget(m_progBar);
     h->addWidget(pf);
 
-    h->addWidget(chip("当前用例", &m_curCaseVal, "-"));
-    h->addWidget(chip("运行时间", &m_runTimeVal, "00:00:00"));
-    h->addWidget(chip("用例总数", &m_totalVal,   "0"));
-    h->addWidget(chip("通过率",   &m_passRateVal,"0.0%"));
-    h->addStretch();
+    QFrame *caseChip = chip("当前用例", &m_curCaseVal, "-");
+    caseChip->setFixedWidth(250);
+    h->addWidget(caseChip);
+
+    QFrame *timeChip = chip("运行时间", &m_runTimeVal, "00:00:00");
+    timeChip->setFixedWidth(90);
+    h->addWidget(timeChip);
+
+    QFrame *totalChip = chip("用例总数", &m_totalVal, "0");
+    totalChip->setFixedWidth(80);
+    h->addWidget(totalChip);
+
+    QFrame *passChip = chip("通过率", &m_passRateVal, "0.0%");
+    passChip->setFixedWidth(80);
+    h->addWidget(passChip);
 
     m_portCombo = new QComboBox; m_portCombo->setFixedWidth(0); m_portCombo->hide();
     for (const QSerialPortInfo &info : QSerialPortInfo::availablePorts())
@@ -703,15 +836,15 @@ QWidget* MainWindow::buildBottom()
     QLabel *v1; bv->addWidget(kvRow("STA 电源", &v1)); m_breakerState = v1; m_breakerState->setText("未知");
     QLabel *v2; bv->addWidget(kvRow("控制方式", &v2)); m_breakerMode = v2; m_breakerMode->setText("CCO 控制");
 
-    // 断路器地址：可编辑（默认 111111111111），下发 = 11F1 添加从节点（入网，不进测试档案）
+    // 断路器地址：可编辑（默认 111111111111），档案下发 = 11F1 添加从节点（入网，不进测试档案）
     QHBoxLayout *addrRow = new QHBoxLayout();
     addrRow->setSpacing(8);
     QLabel *addrKey = new QLabel("断路器地址");
     addrKey->setStyleSheet("color:#5B6675;");
     m_breakerAddr = new QLineEdit("111111111111");
     m_breakerAddr->setMaxLength(12);
-    m_breakerAddr->setToolTip("断路器固定地址：12 位十六进制 / 6 字节。下发 = 11F1 添加从节点，使其入网。");
-    QPushButton *bAdd = new QPushButton("下发");
+    m_breakerAddr->setToolTip("断路器固定地址：12 位十六进制 / 6 字节。档案下发 = 11F1 添加从节点，使其入网。");
+    QPushButton *bAdd = new QPushButton("档案下发");
     bAdd->setMinimumHeight(26);
     bAdd->setCursor(Qt::PointingHandCursor);
     connect(bAdd, &QPushButton::clicked, this, &MainWindow::onBreakerAddNode);
@@ -923,20 +1056,33 @@ void MainWindow::setCaseInfo(const TestCaseInfo *tc)
     m_info["参数文件"]->setText(tc->paramFileName.isEmpty() ? "-" : tc->paramFileName);
 }
 
-void MainWindow::setCcoConnectedUi(bool connected, const QString &serialText)
+void MainWindow::setSerialConnectedUi(bool ccoConnected, bool virtualMeterConnected,
+                                      const QString &serialText,
+                                      const QString &serialDetail)
 {
-    if (connected) {
+    const bool anyConnected = ccoConnected || virtualMeterConnected;
+    if (anyConnected) {
         if (!serialText.isEmpty())
             m_comPortVal->setText(serialText);
-        m_comPortVal->setToolTip(serialText);
-        m_ccoVal->setText("在线");
-        m_ccoVal->setStyleSheet("color:#1E8E3E;font-weight:bold;");
-        m_staVal->setText("虚拟表在线");
-        m_staVal->setStyleSheet("color:#1E8E3E;font-weight:bold;");
-        m_breakerState->setText("已上电");
+        m_comPortVal->setToolTip(serialDetail.isEmpty() ? serialText : serialDetail);
+        if (ccoConnected) {
+            m_ccoVal->setText("在线");
+            m_ccoVal->setStyleSheet("color:#1E8E3E;font-weight:bold;");
+        } else {
+            m_ccoVal->setText("未连接");
+            m_ccoVal->setStyleSheet("color:#D14343;font-weight:bold;");
+        }
+        if (virtualMeterConnected) {
+            m_staVal->setText("在线");
+            m_staVal->setStyleSheet("color:#1E8E3E;font-weight:bold;");
+        } else {
+            m_staVal->setText("未连接");
+            m_staVal->setStyleSheet("color:#D14343;font-weight:bold;");
+        }
+        m_breakerState->setText(ccoConnected ? "已上电" : "未知");
         if (m_connectCcoBtn) {
             m_connectCcoBtn->setText("断开串口");
-            m_connectCcoBtn->setToolTip("断开当前 CCO 串口连接");
+            m_connectCcoBtn->setToolTip("断开当前串口连接");
             m_connectCcoBtn->setObjectName("commandDanger");
         }
     } else {
@@ -1087,13 +1233,20 @@ void MainWindow::onConnectCco()
     if (m_db.concentrators.isEmpty()) { QMessageBox::warning(this, "串口配置", "请先加载 DataBase"); return; }
 
     const ConcentratorInfo &cco = m_db.concentrators.first();
-    if (m_serial->isOpen(cco.slotPosition, cco.dvcId)) {
+    bool virtualMeterOpen = false;
+    for (const MeterInfo &meter : m_db.meters) {
+        if (meter.slotPosition == SingleMeter || meter.slotPosition == ThreeMeter) {
+            virtualMeterOpen = m_serial->isOpen(meter.slotPosition, meter.dvcId);
+            break;
+        }
+    }
+    if (m_serial->isOpen(cco.slotPosition, cco.dvcId) || virtualMeterOpen) {
         if (m_queueActive || m_running) {
             QMessageBox::information(this, "断开串口", "当前正在执行检测，请先中止检测后再断开串口");
             return;
         }
         m_serial->closePorts();
-        setCcoConnectedUi(false);
+        setSerialConnectedUi(false, false);
         Logger::instance().info("CCO/STA 串口已断开");
         return;
     }
@@ -1145,13 +1298,13 @@ void MainWindow::onConnectCco()
 
     SerialEndpoint staEp;
     staEp.dvcId    = 1;
-    staEp.dvcType  = SingleSTA;
+    staEp.dvcType  = SingleMeter;
     staEp.baudRate = 9600;
     staEp.dataBits = QSerialPort::Data8;
     staEp.parity   = QSerialPort::EvenParity;
     staEp.stopBits = QSerialPort::OneStop;
     for (const MeterInfo &meter : m_db.meters) {
-        if (meter.slotPosition == SingleSTA || meter.slotPosition == ThreeSTA) {
+        if (meter.slotPosition == SingleMeter || meter.slotPosition == ThreeMeter) {
             staEp.dvcId = meter.dvcId;
             staEp.dvcType = meter.slotPosition;
             break;
@@ -1172,11 +1325,24 @@ void MainWindow::onConnectCco()
     dlg.setObjectName("dlgRoot");
     dlg.setWindowTitle("串口配置");
     dlg.setWindowFlags(Qt::FramelessWindowHint | Qt::Dialog);
-    dlg.setMinimumWidth(620);
+    dlg.setAttribute(Qt::WA_TranslucentBackground);
+    dlg.setMinimumWidth(656);
 
     QVBoxLayout *outer = new QVBoxLayout(&dlg);
-    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setContentsMargins(18, 18, 18, 18);
     outer->setSpacing(0);
+
+    QFrame *surface = new QFrame;
+    surface->setObjectName("dialogSurface");
+    QGraphicsDropShadowEffect *shadow = new QGraphicsDropShadowEffect(surface);
+    shadow->setBlurRadius(30);
+    shadow->setOffset(0, 8);
+    shadow->setColor(QColor(12, 36, 56, 105));
+    surface->setGraphicsEffect(shadow);
+    QVBoxLayout *surfaceLayout = new QVBoxLayout(surface);
+    surfaceLayout->setContentsMargins(0, 0, 0, 0);
+    surfaceLayout->setSpacing(0);
+    outer->addWidget(surface);
 
     // 与主界面一致的深蓝标题条（可拖动）
     QFrame *dlgHdr = new QFrame; dlgHdr->setObjectName("titleBar");
@@ -1190,13 +1356,13 @@ void MainWindow::onConnectCco()
     dlgClose->setCursor(Qt::PointingHandCursor);
     connect(dlgClose, &QPushButton::clicked, &dlg, &QDialog::reject);
     hdrLay->addWidget(dlgTitle); hdrLay->addStretch(); hdrLay->addWidget(dlgClose);
-    outer->addWidget(dlgHdr);
+    surfaceLayout->addWidget(dlgHdr);
 
     QWidget *dlgBody = new QWidget; dlgBody->setObjectName("dlgBody");
     QVBoxLayout *root = new QVBoxLayout(dlgBody);
     root->setContentsMargins(18, 16, 18, 14);
     root->setSpacing(12);
-    outer->addWidget(dlgBody);
+    surfaceLayout->addWidget(dlgBody, 1);
 
     struct SerialForm {
         QComboBox *port = nullptr;
@@ -1218,6 +1384,7 @@ void MainWindow::onConnectCco()
         out->port = new QComboBox;
         out->port->setEditable(true);
         out->port->setMinimumHeight(34);
+        out->port->addItem("不连接");
         out->port->addItems(ports);
         if (isValidSerialPortName(ep.portName))
             setComboByText(out->port, ep.portName);
@@ -1266,8 +1433,10 @@ void MainWindow::onConnectCco()
     QHBoxLayout *serialLay = new QHBoxLayout;
     serialLay->setSpacing(12);
     SerialForm ccoForm, staForm;
-    serialLay->addWidget(makeSerialGroup("CCO 串口", ccoEp, &ccoForm));
-    serialLay->addWidget(makeSerialGroup("STA/虚拟表串口", staEp, &staForm));
+    QGroupBox *ccoGroup = makeSerialGroup("CCO 串口", ccoEp, &ccoForm);
+    QGroupBox *meterGroup = makeSerialGroup("虚拟表串口", staEp, &staForm);
+    serialLay->addWidget(ccoGroup);
+    serialLay->addWidget(meterGroup);
     root->addLayout(serialLay);
 
     QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -1283,9 +1452,8 @@ void MainWindow::onConnectCco()
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     root->addWidget(buttons);
 
-    if (dlg.exec() != QDialog::Accepted)
+    if (execSecondaryDialog(dlg) != QDialog::Accepted)
         return;
-
     auto readForm = [](const SerialForm &form, SerialEndpoint *ep) {
         ep->portName = form.port->currentText().trimmed();
         ep->baudRate = form.baud->currentText().trimmed().toUInt();
@@ -1296,33 +1464,64 @@ void MainWindow::onConnectCco()
     readForm(ccoForm, &ccoEp);
     readForm(staForm, &staEp);
 
-    const bool directCco = AppConfig::instance().directCcoMode;
-    if (!isValidSerialPortName(ccoEp.portName) || ccoEp.baudRate == 0
-        || (!directCco && (!isValidSerialPortName(staEp.portName) || staEp.baudRate == 0))) {
-        QMessageBox::warning(this, "串口配置", "请检查 CCO/STA 串口和波特率配置，串口名不能填写波特率");
+    const bool openCco = !ccoEp.portName.isEmpty() && ccoEp.portName != "不连接";
+    const bool openVirtualMeter = !staEp.portName.isEmpty() && staEp.portName != "不连接";
+    if (!openCco && !openVirtualMeter) {
+        QMessageBox::warning(this, "串口配置", "CCO 串口和虚拟表串口至少选择一路");
         return;
     }
-    if (!directCco && ccoEp.portName.compare(staEp.portName, Qt::CaseInsensitive) == 0) {
-        QMessageBox::warning(this, "串口配置", "CCO 与 STA/虚拟表不能选择同一个串口");
+    if (openCco != openVirtualMeter) {
+        const QString selected = openCco ? "CCO 串口" : "虚拟表串口";
+        const QString skipped = openCco ? "虚拟表串口" : "CCO 串口";
+        const int answer = QMessageBox::question(
+            this, "确认单路连接",
+            QString("当前只选择了%1，%2将不连接。是否继续？").arg(selected, skipped),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes)
+            return;
+    }
+    if ((openCco && (!isValidSerialPortName(ccoEp.portName) || ccoEp.baudRate == 0))
+        || (openVirtualMeter && (!isValidSerialPortName(staEp.portName) || staEp.baudRate == 0))) {
+        QMessageBox::warning(this, "串口配置", "请检查 CCO/虚拟表串口和波特率配置，串口名不能填写波特率");
+        return;
+    }
+    if (openCco && openVirtualMeter
+        && ccoEp.portName.compare(staEp.portName, Qt::CaseInsensitive) == 0) {
+        QMessageBox::warning(this, "串口配置", "CCO 与虚拟表不能选择同一个串口");
         return;
     }
 
     QString err;
     QList<SerialEndpoint> endpoints;
-    endpoints << ccoEp;
-    if (!directCco)
+    if (openCco)
+        endpoints << ccoEp;
+    if (openVirtualMeter)
         endpoints << staEp;
     if (!m_serial->openPorts(endpoints, err)) {
-        setCcoConnectedUi(false);
+        setSerialConnectedUi(false, false);
         QMessageBox::warning(this, "连接失败", err); return;
     }
     m_devctrl->setCcoDvcId(cco.dvcId);
     const QString ccoText = serialFormatText(ccoEp, "CCO");
-    const QString staText = serialFormatText(staEp, "STA");
-    const QString serialText = directCco ? ccoText : QString("%1 | %2").arg(ccoText, staText);
-    setCcoConnectedUi(true, serialText);
-    Logger::instance().info(QString("串口已连接：%1；虚拟表地址 %2")
-                            .arg(serialText, m_virtualMeter ? m_virtualMeter->meterAddress() : QString("112233445566")));
+    const QString staText = serialFormatText(staEp, "虚拟表");
+    QStringList serialDetails;
+    if (openCco)
+        serialDetails << ccoText;
+    if (openVirtualMeter)
+        serialDetails << staText;
+    const QString serialDetail = serialDetails.join(" | ");
+    const QString ccoSummary = serialSummaryText(ccoEp);
+    const QString staSummary = serialSummaryText(staEp);
+    QStringList serialSummaries;
+    if (openCco)
+        serialSummaries << ccoSummary;
+    if (openVirtualMeter)
+        serialSummaries << staSummary;
+    const QString serialText = serialSummaries.join(" / ");
+    setSerialConnectedUi(openCco, openVirtualMeter, serialText, serialDetail);
+    Logger::instance().info(QString("串口已连接：%1；内置虚拟表地址 %2")
+                            .arg(serialDetail)
+                            .arg(m_virtualMeter ? m_virtualMeter->meterAddress() : QString("112233445566")));
 }
 
 void MainWindow::onParamConfig()
@@ -1330,24 +1529,39 @@ void MainWindow::onParamConfig()
     if (!m_virtualMeter)
         return;
 
-    ParamConfigDialog dlg(m_virtualMeter, this);
-    if (dlg.exec() != QDialog::Accepted)
-        return;
-
-    QString baudMode = "确认";
-    switch (m_virtualMeter->baudConsultMode()) {
-    case VirtualMeter::BaudConsultDeny: baudMode = "否认"; break;
-    case VirtualMeter::BaudConsultNoResponse: baudMode = "不响应"; break;
-    case VirtualMeter::BaudConsultWrongResponse: baudMode = "异常回复"; break;
-    case VirtualMeter::BaudConsultConfirm:
-    default: break;
+    DvcType meterDvcType = SingleMeter;
+    int meterDvcId = 1;
+    for (const MeterInfo &meter : m_db.meters) {
+        if (meter.slotPosition == SingleMeter || meter.slotPosition == ThreeMeter) {
+            meterDvcType = meter.slotPosition;
+            meterDvcId = meter.dvcId;
+            break;
+        }
     }
-    Logger::instance().info(QString("虚拟表参数已保存：表地址=%1，645项=%2，698项=%3，波特率协商=%4，跟随切换=%5")
+    ParamConfigDialog dlg(m_virtualMeter, m_serial, meterDvcType, meterDvcId, this);
+    if (execSecondaryDialog(dlg) != QDialog::Accepted)
+        return;
+    Logger::instance().info(QString("虚拟表功能配置已保存：表地址=%1，645项=%2，698项=%3")
                             .arg(m_virtualMeter->meterAddress())
                             .arg(m_virtualMeter->enabled645Items().size())
-                            .arg(m_virtualMeter->enabled698Items().size())
-                            .arg(baudMode)
-                            .arg(m_virtualMeter->baudConsultSwitchSerial() ? "是" : "否"));
+                            .arg(m_virtualMeter->enabled698Items().size()));
+}
+
+int MainWindow::execSecondaryDialog(QDialog &dialog)
+{
+    QWidget *backdrop = new QWidget(this);
+    backdrop->setObjectName("dialogBackdrop");
+    backdrop->setAttribute(Qt::WA_TransparentForMouseEvents);
+    backdrop->setFocusPolicy(Qt::NoFocus);
+    backdrop->setGeometry(rect());
+    backdrop->setStyleSheet("#dialogBackdrop { background: rgba(12, 42, 65, 64); }");
+    backdrop->show();
+    backdrop->raise();
+
+    dialog.setWindowModality(Qt::WindowModal);
+    const int result = dialog.exec();
+    delete backdrop;
+    return result;
 }
 
 void MainWindow::onStart()
@@ -1384,6 +1598,7 @@ void MainWindow::onStart()
     m_runStamp = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");  // 本批次日志时间戳
     m_queueActive = true;
     m_running = true;
+    updateRunControlButton();
     m_runElapsed.restart();
     m_sysState->setText("运行中"); m_sysState->setStyleSheet("color:#1E8E3E;font-weight:bold;");
     Logger::instance().info(QString("开始批量检测：共 %1 个用例").arg(m_runQueue.size()));
@@ -1421,6 +1636,7 @@ void MainWindow::startNextInQueue()
         closeCaseLog();
         m_queueActive = false;
         m_running = false;
+        updateRunControlButton();
         m_sysState->setText("已完成"); m_sysState->setStyleSheet("color:#1E8E3E;font-weight:bold;");
         Logger::instance().info("全部用例执行完成");
         writeAutoReport();
@@ -1441,6 +1657,7 @@ void MainWindow::startNextInQueue()
     m_stepTable->setRowCount(0);
     m_stepSeq = 0;
     m_stepStartTime = QDateTime();
+    syncVirtualMeterArchive(&m_db, m_virtualMeter);
 
     QString err;
     if (!m_sched->runCase(tcID, err)) {
@@ -1449,15 +1666,41 @@ void MainWindow::startNextInQueue()
     }
 }
 
+void MainWindow::onRunControl()
+{
+    if (m_queueActive || m_running || (m_sched && m_sched->isRunning()))
+        onStop();
+    else
+        onStart();
+}
+
 void MainWindow::onStop()
 {
     m_runQueue.clear();
     m_queueActive = false;
     m_sched->stop();
     m_running = false;
+    updateRunControlButton();
     m_sysState->setText("已停止"); m_sysState->setStyleSheet("color:#D14343;font-weight:bold;");
     Logger::instance().info("用户中止检测");
     closeCaseLog();
+}
+
+void MainWindow::updateRunControlButton()
+{
+    if (!m_runControlBtn)
+        return;
+
+    const bool active = m_queueActive || m_running || (m_sched && m_sched->isRunning());
+    const QString role = active ? "commandDanger" : "commandSuccess";
+    m_runControlBtn->setText(active ? "中止检测" : "开始检测");
+    m_runControlBtn->setToolTip(active ? "停止当前测试任务" : "开始执行当前测试用例");
+    if (m_runControlBtn->objectName() != role) {
+        m_runControlBtn->setObjectName(role);
+        m_runControlBtn->style()->unpolish(m_runControlBtn);
+        m_runControlBtn->style()->polish(m_runControlBtn);
+        m_runControlBtn->update();
+    }
 }
 
 void MainWindow::onPause()
@@ -1518,21 +1761,17 @@ void MainWindow::onBreaker(int op)
 void MainWindow::onBreakerAddNode()
 {
     if (m_db.concentrators.isEmpty()) {
-        QMessageBox::warning(this, "下发", "未配置 CCO 档案"); return;
+        QMessageBox::warning(this, "档案下发", "未配置 CCO 档案"); return;
     }
     const ConcentratorInfo &cco = m_db.concentrators.first();
     const int ccoId = cco.dvcId;
     if (!m_serial->isOpen(cco.slotPosition, ccoId)) {
-        QMessageBox::warning(this, "下发", "请先连接 CCO"); return;
+        QMessageBox::warning(this, "档案下发", "请先连接 CCO"); return;
     }
 
     QString hex = m_breakerAddr->text().trimmed().remove(' ').toUpper();
-    static const QString kHexSet = "0123456789ABCDEF";
-    bool okHex = (hex.size() == 12);
-    for (int i = 0; okHex && i < hex.size(); ++i)
-        if (!kHexSet.contains(hex.at(i))) okHex = false;
-    if (!okHex) {
-        QMessageBox::warning(this, "下发", "断路器地址需要 12 位十六进制（6 字节），例如 111111111111");
+    if (!isHexAddr12(hex)) {
+        QMessageBox::warning(this, "档案下发", "断路器地址需要 12 位十六进制（6 字节），例如 111111111111");
         return;
     }
 
@@ -1540,17 +1779,32 @@ void MainWindow::onBreakerAddNode()
     const QByteArray frame = BreakerCtrl::buildAddNode11F1(addr6, m_breakerSeq++, 0x03);
     m_serial->send(cco.slotPosition, ccoId, frame);
     Logger::instance().log(Module_SYSTEM, Log_Info,
-        QString("[断路器] 下发添加从节点(11F1) 地址=%1：%2")
+        QString("[断路器] 档案下发添加从节点(11F1) 地址=%1：%2")
         .arg(hex).arg(QString(frame.toHex(' ').toUpper())));
 }
 
 // ===================== 调度回调 =====================
 void MainWindow::onCaseStarted(int tcID, const QString &name, int runIdx, int total)
 {
-    m_curCaseVal->setText(QString("TC_%1 - %2").arg(tcID, 5, 10, QChar('0')).arg(name));
-    openCaseLog(tcID, name, runIdx, total);
+    if (m_virtualMeter)
+        m_virtualMeter->setCurrentCaseId(tcID);
+    const QString caseText = QString("TC_%1  %2").arg(tcID, 5, 10, QChar('0')).arg(name);
+    const int caseTextWidth = qMax(1, m_curCaseVal->contentsRect().width());
+    m_curCaseVal->setText(m_curCaseVal->fontMetrics().elidedText(caseText,
+                                                                 Qt::ElideRight,
+                                                                 caseTextWidth));
+    m_curCaseVal->setToolTip(caseText);
+    const TestCaseInfo *curCase = nullptr;
+    for (const TestCaseInfo &tc : m_db.cases) {
+        if (tc.tcID == tcID) {
+            curCase = &tc;
+            break;
+        }
+    }
+    openCaseLog(tcID, name, curCase ? curCase->catalogueName : QString(), runIdx, total);
     m_stepStartTime = QDateTime();
-    for (const TestCaseInfo &tc : m_db.cases) if (tc.tcID == tcID) { setCaseInfo(&tc); break; }
+    if (curCase)
+        setCaseInfo(curCase);
 }
 
 void MainWindow::onCaseProgress(int /*tcID*/, int /*state*/, const QString &desc)

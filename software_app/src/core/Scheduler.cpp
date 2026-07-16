@@ -12,7 +12,8 @@ void Scheduler::setHost(ScriptHost *h)
 {
     m_host = h;
     if (m_host)
-        connect(m_host, &ScriptHost::progress, this, &Scheduler::onHostProgress);
+        connect(m_host, &ScriptHost::progress,
+                this, &Scheduler::onHostProgress, Qt::QueuedConnection);
 }
 
 bool Scheduler::runCase(int tcID, QString &err)

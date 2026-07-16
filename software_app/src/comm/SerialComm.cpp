@@ -1,6 +1,8 @@
 #include "comm/SerialComm.h"
 #include "common/Logger.h"
 #include <QDebug>
+#include <QElapsedTimer>
+#include <QThread>
 
 namespace {
 bool isCcoEndpoint(DvcType dvcType)
@@ -17,19 +19,6 @@ int frame3762Length(const QByteArray &buf)
     return lo | (hi << 8);
 }
 
-bool isAfn06F5EventReport(const QByteArray &frame)
-{
-    if (frame.size() < 13)
-        return false;
-
-    const unsigned char ctrl = static_cast<unsigned char>(frame.at(3));
-    const bool isUpFrame = (ctrl & 0x80) != 0;
-    const unsigned char afn = static_cast<unsigned char>(frame.at(10));
-    const unsigned char dt1 = static_cast<unsigned char>(frame.at(11));
-    const unsigned char dt2 = static_cast<unsigned char>(frame.at(12));
-
-    return isUpFrame && afn == 0x06 && dt1 == 0x10 && dt2 == 0x00;
-}
 }
 
 SerialComm::SerialComm(QObject *parent) : QObject(parent) {}
@@ -94,6 +83,12 @@ bool SerialComm::isOpen(DvcType dvcType, int dvcId) const
     return p && p->isOpen();
 }
 
+qint32 SerialComm::baudRate(DvcType dvcType, int dvcId) const
+{
+    QSerialPort *p = portByEndpoint(dvcType, dvcId);
+    return p ? p->baudRate() : 0;
+}
+
 QString SerialComm::endpointKey(DvcType dvcType, int dvcId) const
 {
     return QString("%1:%2").arg(int(dvcType)).arg(dvcId);
@@ -127,14 +122,14 @@ void SerialComm::send(DvcType dvcType, int id, const QByteArray &frame)
     QSerialPort *p = portByEndpoint(dvcType, id);
     if (!p && isCcoEndpoint(dvcType))
         p = firstCcoPort();
-    if (!p)
-        p = firstPortByDvcId(id);
     if (!p || !p->isOpen()) {
         Logger::instance().error(QString("发送失败：type=%1,dvcId=%2 串口未打开").arg(int(dvcType)).arg(id));
         return;
     }
     p->write(frame);
-    Logger::instance().msg(QString(">> dvc%1 发送: %2").arg(id).arg(QString(frame.toHex(' ').toUpper())));
+    Logger::instance().msg(QString(">> type=%1,dvc%2 发送: %3")
+                            .arg(int(dvcType)).arg(id)
+                            .arg(QString(frame.toHex(' ').toUpper())));
 }
 
 bool SerialComm::setBaudRate(int dvcId, qint32 baud)
@@ -152,14 +147,41 @@ bool SerialComm::setBaudRate(DvcType dvcType, int dvcId, qint32 baud)
         p = firstCcoPort();
     if (!p) return false;
     if (p->baudRate() == baud) {   // 同波特率，无需动口
-        Logger::instance().info(QString("设置本机串口波特率 dvcId=%1 -> %2 (无变化)").arg(dvcId).arg(baud));
+        Logger::instance().info(QString("设置本机串口波特率 type=%1,dvcId=%2 -> %3 (无变化)")
+                                .arg(int(dvcType)).arg(dvcId).arg(baud));
         return true;
     }
     // 部分 USB 转串(CH340/PL2303 等)对"运行中热改波特率"支持差，会进异常态/重枚举，
     // 故采用 先 close → 设波特率 → 重开 的方式，让驱动以新波特率重新初始化（COM 号不变）。
     const bool wasOpen = p->isOpen();
     if (wasOpen) {
-        p->waitForBytesWritten(200);   // 排空待发字节，避免 close 截断刚写入的帧（如 CCO 复位帧）
+        const qint64 pendingBytes = p->bytesToWrite();
+        const qint64 currentBaud = p->baudRate();
+        // Use 12 bits/byte as a conservative upper bound (start + 8 data +
+        // parity + up to 2 stop bits), then leave 20 ms for the USB/UART FIFO.
+        const qint64 minWireMs = pendingBytes > 0 && currentBaud > 0
+            ? ((pendingBytes * 12 * 1000 + currentBaud - 1) / currentBaud) + 20
+            : 0;
+        const qint64 drainTimeoutMs = qMax<qint64>(500, minWireMs + 300);
+        QElapsedTimer drainTimer;
+        drainTimer.start();
+        while (p->bytesToWrite() > 0 && drainTimer.elapsed() < drainTimeoutMs) {
+            const int waitMs = int(qMin<qint64>(100, drainTimeoutMs - drainTimer.elapsed()));
+            if (waitMs <= 0)
+                break;
+            p->waitForBytesWritten(waitMs);
+        }
+        if (p->bytesToWrite() > 0) {
+            Logger::instance().error(QString("切换波特率前发送队列未排空：type=%1,dvcId=%2,remaining=%3")
+                                     .arg(int(dvcType)).arg(dvcId).arg(p->bytesToWrite()));
+            return false;
+        }
+        if (drainTimer.elapsed() < minWireMs)
+            QThread::msleep(static_cast<unsigned long>(minWireMs - drainTimer.elapsed()));
+        if (pendingBytes > 0) {
+            Logger::instance().info(QString("切换波特率前发送已排空：type=%1,dvcId=%2,bytes=%3,elapsed=%4ms")
+                                    .arg(int(dvcType)).arg(dvcId).arg(pendingBytes).arg(drainTimer.elapsed()));
+        }
         p->close();
     }
     p->setBaudRate(baud);
@@ -171,8 +193,10 @@ bool SerialComm::setBaudRate(DvcType dvcType, int dvcId, qint32 baud)
             if (m_rxBuffers.contains(p)) m_rxBuffers[p].clear();   // 清帧累积缓冲
         }
     }
-    Logger::instance().info(QString("设置本机串口波特率 dvcId=%1 -> %2 %3(先断开再重开)")
-                            .arg(dvcId).arg(baud).arg(ok ? "成功" : "失败：" + p->errorString()));
+    const SerialEndpoint ep = m_eps.value(p);
+    Logger::instance().info(QString("设置本机串口波特率 type=%1,dvcId=%2,port=%3 -> %4 %5(先断开再重开)")
+                            .arg(int(ep.dvcType)).arg(ep.dvcId).arg(ep.portName)
+                            .arg(baud).arg(ok ? "成功" : "失败：" + p->errorString()));
     return ok;
 }
 
@@ -185,7 +209,9 @@ void SerialComm::onReadyRead()
     if (data.isEmpty()) return;
 
     if (!isCcoEndpoint(ep.dvcType)) {
-        Logger::instance().msg(QString("<< dvc%1 接收: %2").arg(ep.dvcId).arg(QString(data.toHex(' ').toUpper())));
+        Logger::instance().msg(QString("<< type=%1,dvc%2 接收: %3")
+                               .arg(int(ep.dvcType)).arg(ep.dvcId)
+                               .arg(QString(data.toHex(' ').toUpper())));
         emit bytesReceived(ep.dvcType, ep.dvcId, data);
         return;
     }
@@ -228,13 +254,9 @@ void SerialComm::onReadyRead()
             continue;
         }
 
-        if (isAfn06F5EventReport(frame)) {
-            buf.remove(0, frameLen);
-            continue;
-        }
-
-        Logger::instance().msg(QString("<< dvc%1 接收完整帧: %2")
-                               .arg(ep.dvcId).arg(QString(frame.toHex(' ').toUpper())));
+        Logger::instance().msg(QString("<< type=%1,dvc%2 接收完整帧: %3")
+                               .arg(int(ep.dvcType)).arg(ep.dvcId)
+                               .arg(QString(frame.toHex(' ').toUpper())));
         emit bytesReceived(ep.dvcType, ep.dvcId, frame);
         buf.remove(0, frameLen);
     }

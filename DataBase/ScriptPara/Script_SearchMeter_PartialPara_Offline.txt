@@ -1,4 +1,4 @@
-[Script_SearchMeter_PartialPara_Normal]
+[Script_SearchMeter_PartialPara_Offline]
 #等待成功率达到目标门限的允许时长(单位:秒)
 timerForReachThresld=1800
 #成功率目标门限
@@ -14,4 +14,4 @@ needBuildNet=true
 #脚本运行结束是否需要断电
 needPowerOff=true
 #搜表持续时间(min)
-activeTime=5
+activeTime=20

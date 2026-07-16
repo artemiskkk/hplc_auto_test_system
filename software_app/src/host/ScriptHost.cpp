@@ -1,9 +1,11 @@
 #include "host/ScriptHost.h"
 #include "comm/SerialComm.h"
 #include "device/DeviceControl.h"
+#include "device/VirtualMeter.h"
 #include "common/Logger.h"
 #include "config/AppConfig.h"
 #include <QException>
+#include <QStringList>
 #include <QTimer>
 #include <cstring>
 #include <exception>
@@ -12,6 +14,74 @@ namespace {
 bool isCcoTarget(DvcType dvcType)
 {
     return dvcType == CCO_GW || dvcType == CCO_NW;
+}
+
+bool isBroadcastTime05F3(const uchar *data, int length)
+{
+    if (!data || length < 14)
+        return false;
+
+    int offset = 0;
+    while (offset < length && data[offset] == 0xFE)
+        ++offset;
+    if (length - offset < 14 || data[offset] != 0x68)
+        return false;
+
+    const int frameLength = int(data[offset + 1]) | (int(data[offset + 2]) << 8);
+    if (frameLength < 14 || frameLength > length - offset
+            || data[offset + frameLength - 1] != 0x16)
+        return false;
+
+    return data[offset + 10] == 0x05
+            && data[offset + 11] == 0x04
+            && data[offset + 12] == 0x00;
+}
+
+bool isStaIdWrite645(const uchar *data, int length)
+{
+    if (!data || length < 16)
+        return false;
+
+    int offset = 0;
+    while (offset < length && data[offset] == 0xFE)
+        ++offset;
+    if (length - offset < 16 || data[offset] != 0x68)
+        return false;
+
+    const uchar *frame = data + offset;
+    if (frame[7] != 0x68 || frame[8] != 0x14)
+        return false;
+
+    const int dataLength = int(frame[9]);
+    const int frameLength = dataLength + 12;
+    if (frameLength > length - offset || frame[frameLength - 1] != 0x16)
+        return false;
+
+    const bool chipId = dataLength == 28
+            && frame[10] == 0x33 && frame[11] == 0x33
+            && frame[12] == 0x23 && frame[13] == 0x23;
+    const bool moduleId = dataLength == 15
+            && frame[10] == 0x34 && frame[11] == 0x33
+            && frame[12] == 0x23 && frame[13] == 0x23;
+    return chipId || moduleId;
+}
+
+bool isStaIdRead645(const uchar *data, int length)
+{
+    if (!data || length < 13)
+        return false;
+
+    int offset = 0;
+    while (offset < length && data[offset] == 0xFE)
+        ++offset;
+    if (length - offset < 13)
+        return false;
+
+    const uchar *frame = data + offset;
+    return frame[0] == 0x68 && frame[7] == 0x68
+            && frame[8] == 0x1F && frame[9] == 0x01
+            && (frame[10] == 0x01 || frame[10] == 0x02)
+            && frame[12] == 0x16;
 }
 
 QString exceptionText(const char *where, const QString &detail)
@@ -32,6 +102,21 @@ void stopPluginQuietly(AbstractPluginScript *plugin)
     } catch (...) {
         Logger::instance().error("Script stop failed while handling exception");
     }
+}
+
+QString meterArchiveSummary(const QList<MeterInfo> &meters)
+{
+    QStringList parts;
+    for (const MeterInfo &meter : meters) {
+        const QString addr = QString(QByteArray(reinterpret_cast<const char*>(meter.mtrAddr), 6).toHex().toUpper());
+        parts << QString("id=%1 addr=%2 type=%3 prtcl=%4 dvcId=%5")
+                    .arg(meter.mtrID)
+                    .arg(addr)
+                    .arg(int(meter.slotPosition))
+                    .arg(int(meter.prtcl))
+                    .arg(meter.dvcId);
+    }
+    return parts.join("; ");
 }
 }
 
@@ -98,6 +183,9 @@ bool ScriptHost::runCase(const QString &className,
 
     m_plugin->setHost(this);
     m_plugin->setScript(className);
+    Logger::instance().info(QString("addAddrsInfo 表档案：count=%1 %2")
+                            .arg(m_meter.size())
+                            .arg(meterArchiveSummary(m_meter)));
     m_plugin->addAddrsInfo(&m_conc, &m_meter, &m_scheme, freqEncoded);
     try {
         m_plugin->config(&m_para);
@@ -156,11 +244,36 @@ void ScriptHost::stopCase()
 
 void ScriptHost::sendMsg2Dvc(DvcType dvcType, int id, uchar *data, int datalen)
 {
-    if (AppConfig::instance().directCcoMode && !isCcoTarget(dvcType)) {
-        Logger::instance().info(QString("Direct CCO mode ignored legacy local-device send: type=%1,dvcId=%2,len=%3")
+    const AppConfig &cfg = AppConfig::instance();
+    const bool directStaIdAccess = (cfg.directCcoMode || cfg.virtualMeterSerialEnabled)
+            && (isStaIdWrite645(data, datalen) || isStaIdRead645(data, datalen));
+    if ((cfg.directCcoMode || cfg.virtualMeterSerialEnabled) && !isCcoTarget(dvcType)
+            && !directStaIdAccess) {
+        Logger::instance().info(QString("Virtual meter/direct CCO mode ignored legacy local-device send: type=%1,dvcId=%2,len=%3")
                                 .arg(int(dvcType)).arg(id).arg(datalen));
         delete[] data;
         return;
+    }
+    if (directStaIdAccess && m_serial) {
+        const bool switched = m_serial->setBaudRate(dvcType, id, 2400);
+        Logger::instance().info(QString("[direct-cco] direct STA ID 645 access type=%1,dvcId=%2 -> 2400: %3")
+                                .arg(int(dvcType)).arg(id)
+                                .arg(switched ? "success" : "failed"));
+    }
+    if (cfg.virtualMeterSerialEnabled && m_serial && isCcoTarget(dvcType)
+            && isBroadcastTime05F3(data, datalen)) {
+        bool mapped = false;
+        for (const MeterInfo &meter : m_meter) {
+            if (meter.slotPosition != SingleMeter)
+                continue;
+            mapped = m_serial->setBaudRate(meter.slotPosition, meter.dvcId, 2400);
+            Logger::instance().info(QString("[direct-cco] 05F3 broadcast maps virtual meter type=%1,dvcId=%2 -> 2400: %3")
+                                    .arg(int(meter.slotPosition)).arg(meter.dvcId)
+                                    .arg(mapped ? "success" : "failed"));
+            break;
+        }
+        if (!mapped)
+            Logger::instance().error("[direct-cco] 05F3 broadcast cannot map a SingleMeter endpoint");
     }
     // 下行：data 由脚本 new uchar[] 分配，宿主发送后 delete[]（详见详细设计 §4.1）
     // 注意：不要在此对 01F1/01F2 复位帧自动切 9600。CCO 收到复位帧是先在“当前波特率”回确认、
@@ -174,22 +287,76 @@ void ScriptHost::sendMsg2Dvc(DvcType dvcType, int id, uchar *data, int datalen)
 void ScriptHost::controlDvc(DvcType dvcType, QList<int> idList, CtrlCmdType cmd, QList<double> params)
 {
     const AppConfig &cfg = AppConfig::instance();
-    if (cfg.directCcoMode) {
-        // STA 上下电/复位/事件等无对应硬件 → 虚拟 ACK 即可。
-        // 但"设波特率"针对 CCO 时必须真改本机串口：CCO 已通过 F0F3 切到新速率，
-        // 主站不跟着切就会用旧速率发后续帧(如清除下装)，CCO 收不到 → 超时。
+    if (cfg.directCcoMode || cfg.virtualMeterSerialEnabled) {
+        // STA 上下电/复位/事件等无对应硬件 -> 虚拟 ACK 即可。
+        // SingleSTA/ThreeSTA 的波特率表示物理 STA 与表之间的串口速率，因此需要
+        // 明确映射到本次档案中的 SingleMeter 端点；不能仅凭相同 dvcId 猜端口。
         if ((cmd == CtrlCmd_SetBaudRate || cmd == ReadCtrlDvc_SetBaudRate)
-            && m_serial && !params.isEmpty()) {
+            && m_serial && !params.isEmpty()
+            && (dvcType == CCO_GW || dvcType == CCO_NW
+                || dvcType == SingleMeter || dvcType == ThreeMeter)) {
             const qint32 baud = static_cast<qint32>(params.first());
             const int targetId = !idList.isEmpty() ? idList.first()
                                  : (!m_conc.isEmpty() ? m_conc.first().dvcId : 0);
             m_serial->setBaudRate(dvcType, targetId, baud);   // 真切本机串口（内部已"先断开再重开"）
+        } else if ((cmd == CtrlCmd_SetBaudRate || cmd == ReadCtrlDvc_SetBaudRate)
+                   && m_serial && !params.isEmpty()
+                   && cfg.virtualMeterSerialEnabled
+                   && (dvcType == SingleSTA || dvcType == ThreeSTA)) {
+            const qint32 baud = static_cast<qint32>(params.first());
+            if (m_virtualMeter && !m_virtualMeter->acceptsLegacyFixtureBaudControl()) {
+                Logger::instance().info(QString("[direct-cco] TC_00117 ignore legacy %1 baud %2; virtual meter port keeps configured baud")
+                                        .arg(dvcType == ThreeSTA ? "ThreeSTA" : "SingleSTA")
+                                        .arg(baud));
+            } else {
+                bool mapped = false;
+                for (const MeterInfo &meter : m_meter) {
+                    if (meter.slotPosition != SingleMeter)
+                        continue;
+                    mapped = m_serial->setBaudRate(meter.slotPosition, meter.dvcId, baud);
+                    Logger::instance().info(QString("[direct-cco] map %1 baud to virtual meter type=%2,dvcId=%3 -> %4: %5")
+                                            .arg(dvcType == ThreeSTA ? "ThreeSTA" : "SingleSTA")
+                                            .arg(int(meter.slotPosition)).arg(meter.dvcId).arg(baud)
+                                            .arg(mapped ? "success" : "failed"));
+                    break;
+                }
+                if (!mapped && m_meter.isEmpty()) {
+                    Logger::instance().error(QString("[direct-cco] cannot map %1 baud %2: virtual meter archive is empty")
+                                             .arg(dvcType == ThreeSTA ? "ThreeSTA" : "SingleSTA")
+                                             .arg(baud));
+                }
+            }
+        } else if ((cmd == CtrlCmd_SetBaudRate || cmd == ReadCtrlDvc_SetBaudRate)
+                   && !params.isEmpty()) {
+            Logger::instance().info(QString("[direct-cco] ignore legacy fixture baud change type=%1,dvcId=%2 -> %3; virtual meter port keeps its configured baud")
+                                    .arg(int(dvcType))
+                                    .arg(idList.isEmpty() ? 0 : idList.first())
+                                    .arg(params.first()));
         }
+        DvcType eventDvcType = SingleMeter;
+        int eventDvcId = 0;
+        bool triggerVirtualEvent = false;
+        if (cmd == CtrlCmd_EventPinHigh && cfg.virtualMeterSerialEnabled && m_virtualMeter) {
+            for (const MeterInfo &meter : m_meter) {
+                if (meter.slotPosition != SingleMeter && meter.slotPosition != ThreeMeter)
+                    continue;
+                eventDvcType = meter.slotPosition;
+                eventDvcId = meter.dvcId;
+                triggerVirtualEvent = true;
+                break;
+            }
+        }
+
         Logger::instance().info(QString("[direct-cco] virtual controlDvc ACK type=%1 cmd=%2")
                                 .arg(int(dvcType)).arg(int(cmd)));
         QTimer::singleShot(cfg.ctrlAckDelayMs, this, [=]() {
-            if (!m_scriptFaulted)
+            if (!m_scriptFaulted) {
                 onCtrlResult(dvcType, idList, cmd, true, params);
+                if (triggerVirtualEvent && !m_scriptFaulted
+                    && !m_virtualMeter->triggerActiveEvent(eventDvcType, eventDvcId)) {
+                    Logger::instance().error("[虚拟表] 事件触发失败：当前用例或虚拟表串口不可用");
+                }
+            }
         });
         return;
     }
@@ -208,6 +375,12 @@ void ScriptHost::updateProgress(ProcessState state, QString desc)
 
     if (desc.startsWith(QStringLiteral("提取到完整3762帧")) || verboseRawRecv)
         return;
+
+    const bool terminalState = state == ProcessState_Success
+            || state == ProcessState_Failed
+            || state == ProcessState_Error;
+    if (terminalState)
+        m_scriptFaulted = true;
 
     Logger::instance().info(QString("[进度] %1").arg(desc));
     emit progress(static_cast<int>(state), desc);

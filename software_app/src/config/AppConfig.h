@@ -28,6 +28,9 @@ struct AppConfig
 
     // 串口直连 CCO 模式。
     bool directCcoMode = true;
+    // Open a second serial endpoint for the software virtual meter.
+    // When enabled, legacy script sends to table-side devices are ignored.
+    bool virtualMeterSerialEnabled = true;
     // 是否强制关闭脚本组网(needBuildNet=false)。
     //   false：保留脚本组网检测——needBuildNet=true 的用例会先发 10F21 探测拓扑
     //          （纯 CCO 串口、零 controlDvc），在网数与档案一致才进入正题，否则重新组网。

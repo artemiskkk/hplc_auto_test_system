@@ -14,6 +14,7 @@
 
 class SerialComm;
 class DeviceControl;
+class VirtualMeter;
 
 class ScriptHost : public QObject, public AbstractScriptHost
 {
@@ -24,6 +25,7 @@ public:
 
     void setSerial(SerialComm *s)        { m_serial = s; }
     void setDeviceControl(DeviceControl *d);
+    void setVirtualMeter(VirtualMeter *meter) { m_virtualMeter = meter; }
 
     bool loadPlugin(const QString &path, QString &err);
     bool isPluginLoaded() const { return m_plugin != nullptr; }
@@ -56,6 +58,7 @@ private:
     AbstractPluginScript *m_plugin = nullptr;
     SerialComm           *m_serial = nullptr;
     DeviceControl        *m_devctrl = nullptr;
+    VirtualMeter         *m_virtualMeter = nullptr;
     bool                  m_scriptFaulted = false;
 
     // 运行期档案（addAddrsInfo 取 const 指针，须在执行期间保持有效）

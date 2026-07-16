@@ -60,9 +60,22 @@ QGroupBox QGroupBox {
 #titleName { color: #FFFFFF; font-size: 15px; font-weight: bold; }
 #titleVer  { color: #BBD2E8; font-size: 11px; padding-top: 2px; }
 
-/* 与主界面一致的自绘对话框 */
-#dlgRoot { background: #FFFFFF; border: 1px solid #0C2B45; }
-#dlgBody { background: #FFFFFF; }
+/* Secondary windows: raised surface over a dimmed main window. */
+#dlgRoot { background: transparent; border: none; }
+#dialogSurface {
+    background: #F6F9FC;
+    border: 1px solid #8FA6BA;
+    border-radius: 8px;
+}
+#dialogSurface #titleBar {
+    border-top-left-radius: 7px;
+    border-top-right-radius: 7px;
+}
+#dlgBody {
+    background: #F6F9FC;
+    border-bottom-left-radius: 7px;
+    border-bottom-right-radius: 7px;
+}
 #dlgBody > QLabel { color: #44505F; }
 #winBtn, #winClose {
     background: transparent; color: #DCE7F2; border: none;

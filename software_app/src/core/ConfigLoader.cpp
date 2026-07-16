@@ -43,6 +43,36 @@ QSerialPort::Parity parseParity(const QString &raw)
     return QSerialPort::NoParity;
 }
 
+uchar parsePhaseCode(const QString &raw)
+{
+    QString phase = raw.trimmed().toUpper();
+    if (phase.isEmpty())
+        return 0;
+
+    phase.remove(QRegExp("[\\s,;/|_\\-]+"));
+    phase.remove(QChar(0x76F8));
+
+    bool ok = false;
+    const int numeric = phase.toInt(&ok);
+    if (ok)
+        return (numeric >= 0 && numeric <= 12) ? static_cast<uchar>(numeric) : 0;
+
+    if (phase == "A")   return 1;
+    if (phase == "B")   return 2;
+    if (phase == "AB")  return 3;
+    if (phase == "C")   return 4;
+    if (phase == "AC")  return 5;
+    if (phase == "BC")  return 6;
+    if (phase == "ABC") return 7;
+    if (phase == "ACB") return 8;
+    if (phase == "BAC") return 9;
+    if (phase == "BCA") return 10;
+    if (phase == "CAB") return 11;
+    if (phase == "CBA") return 12;
+
+    return 0;
+}
+
 } // namespace
 
 QList<QStringList> ConfigLoader::readCsv(const QString &path, bool skipHeader, QString &err)
@@ -110,7 +140,7 @@ bool ConfigLoader::parseMeters(const QString &csv, QList<MeterInfo> &out, QStrin
         m.mtrID = c.at(0).trimmed().toInt();
         ModelUtil::parseBcdAddr(c.at(1), m.mtrAddr);
         m.slotPosition = ModelUtil::slotToDvcType(c.at(2));
-        m.realPhase = static_cast<uchar>(c.at(3).trimmed().isEmpty() ? 0 : c.at(3).trimmed().at(0).toLatin1());
+        m.realPhase = parsePhaseCode(c.at(3));
         m.phaseSeq  = static_cast<uchar>(c.at(4).trimmed().toInt());
         m.prtcl     = ModelUtil::protocolCode(c.at(5));
         ModelUtil::parseBcdAddr(c.at(6), m.CJQAddr);

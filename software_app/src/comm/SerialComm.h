@@ -32,6 +32,7 @@ public:
     void closePorts();
     bool isOpen(int dvcId) const;
     bool isOpen(DvcType dvcType, int dvcId) const;
+    qint32 baudRate(DvcType dvcType, int dvcId) const;
 
     // 下行：按 (dvcType,id=dvcId) 选端口发送原始报文。
     void send(DvcType dvcType, int id, const QByteArray &frame);

@@ -10,6 +10,7 @@
 #include <QString>
 #include <QStringList>
 #include <QByteArray>
+#include <QMetaType>
 #include <QRegExp>
 #include "PublicDataStruct/commdatatype.h"
 
@@ -36,6 +37,8 @@ struct CaseResult
         }
     }
 };
+
+Q_DECLARE_METATYPE(CaseResult)
 
 // 全部档案/配置/用例的内存模型
 struct Database

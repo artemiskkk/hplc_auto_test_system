@@ -20,6 +20,8 @@
 #include <QProcess>
 #include <QDesktopServices>
 #include <QUrl>
+#include <QRegExp>
+#include <QStringList>
 
 // ===================== 文件内小工具（路径/文件名） =====================
 namespace {
@@ -42,6 +44,24 @@ QString safeFileName(const QString &name)
     if (v.isEmpty())
         v = "未命名测试项";
     return v.left(80);
+}
+
+QStringList logCategoryDirs(const QString &catalogueName)
+{
+    QString cat = catalogueName.trimmed();
+    if (cat.isEmpty())
+        cat = "未分类";
+
+    QStringList dirs;
+    const QStringList parts = cat.split(QRegExp("\\s*[-－—]+\\s*"), QString::SkipEmptyParts);
+    for (const QString &part : parts) {
+        const QString dir = safeFileName(part);
+        if (!dir.isEmpty())
+            dirs << dir;
+    }
+    if (dirs.isEmpty())
+        dirs << "未分类";
+    return dirs;
 }
 
 QString uniqueFilePath(const QDir &dir, const QString &baseName, const QString &suffix)
@@ -74,12 +94,16 @@ QString reportBasePath(bool unique)
     return p;
 }
 
-QString caseLogPath(const QString &caseName, const QString &stamp)
+QString caseLogPath(const QString &catalogueName, const QString &caseName, const QString &stamp)
 {
     QDir appDir(QCoreApplication::applicationDirPath());
+    QString logDirPath = "logs";
+    for (const QString &dir : logCategoryDirs(catalogueName))
+        logDirPath += "/" + dir;
+
     const QString safeName = safeFileName(caseName);
-    appDir.mkpath("logs/" + safeName);
-    QDir caseDir(appDir.filePath("logs/" + safeName));
+    appDir.mkpath(logDirPath + "/" + safeName);
+    QDir caseDir(appDir.filePath(logDirPath + "/" + safeName));
     // 文件名带运行时间戳，避免每次运行覆盖历史日志（同一批次内多轮仍写同一文件以便追加）
     const QString suffix = stamp.isEmpty()
                            ? QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss") : stamp;
@@ -102,9 +126,9 @@ QString normalizeLogText(QString text)
 // ===================== 运行日志：文件句柄 =====================
 
 // 打开本用例运行日志文件并保持句柄常开（重复轮次追加）。由 onCaseStarted 调用。
-void MainWindow::openCaseLog(int tcID, const QString &name, int runIdx, int total)
+void MainWindow::openCaseLog(int tcID, const QString &name, const QString &catalogue, int runIdx, int total)
 {
-    const QString path = caseLogPath(name, m_runStamp);
+    const QString path = caseLogPath(catalogue, name, m_runStamp);
     const bool appendRun = runIdx > 1 && QFileInfo::exists(path);
     closeCaseLog();                       // 关掉上一个用例的句柄
     m_logFilePath = path;
@@ -116,10 +140,12 @@ void MainWindow::openCaseLog(int tcID, const QString &name, int runIdx, int tota
         out.setCodec("UTF-8");
         out.setGenerateByteOrderMark(!appendRun);
         if (appendRun) out << '\n';
-        out << "测试项: " << name << '\n';
-        out << "用例编号: " << QString("TC_%1").arg(tcID, 5, 10, QChar('0')) << '\n';
-        out << "开始时间: " << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss") << '\n';
-        out << "执行轮次: " << runIdx << "/" << total << '\n';
+        out << QString::fromUtf8("测试项: ") << name << '\n';
+        out << QString::fromUtf8("所属目录: ")
+            << (catalogue.trimmed().isEmpty() ? QString::fromUtf8("未分类") : catalogue.trimmed()) << '\n';
+        out << QString::fromUtf8("用例编号: ") << QString("TC_%1").arg(tcID, 5, 10, QChar('0')) << '\n';
+        out << QString::fromUtf8("开始时间: ") << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss") << '\n';
+        out << QString::fromUtf8("执行轮次: ") << runIdx << "/" << total << '\n';
         out << "----------------------------------------\n";
         out.flush();
         m_logFile->flush();

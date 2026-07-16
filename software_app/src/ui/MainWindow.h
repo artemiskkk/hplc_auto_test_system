@@ -21,6 +21,7 @@ class QLineEdit;
 class QCheckBox;
 class QFile;
 class QPushButton;
+class QDialog;
 class QResizeEvent;
 class QShowEvent;
 class QSplitter;
@@ -49,6 +50,7 @@ private slots:
     void onLoadDataBase();
     void onLoadPlugin();
     void onConnectCco();
+    void onRunControl();
     void onStart();
     void onStop();
     void onPause();
@@ -87,6 +89,8 @@ private:
     void buildStatusBar();
     void adjustMainSplit();
     void applyUiScale();
+    void updateRunControlButton();
+    int execSecondaryDialog(QDialog &dialog);
     double currentScreenScale() const;
     int spx(int value) const;
     void buildCaseTree(const QString &filter = QString());
@@ -96,10 +100,12 @@ private:
     int  selectedCaseId() const;
     void refreshStats();
     void setCaseInfo(const TestCaseInfo *tc);
-    void setCcoConnectedUi(bool connected, const QString &serialText = QString());
+    void setSerialConnectedUi(bool ccoConnected, bool virtualMeterConnected,
+                              const QString &serialText = QString(),
+                              const QString &serialDetail = QString());
     void writeAutoReport();             // 测试完成后在 test_report 目录生成 CSV 报告
     void appendLogFile(const QString &ts, const QString &level, const QString &source, const QString &msg);
-    void openCaseLog(int tcID, const QString &name, int runIdx, int total);  // 打开用例运行日志文件
+    void openCaseLog(int tcID, const QString &name, const QString &catalogue, int runIdx, int total);  // 打开用例运行日志文件
     void closeCaseLog();                // 关闭当前用例运行日志文件句柄
     QList<int> checkedCaseIds() const;  // 勾选的用例（按档案顺序）
     void updateSelCount();              // 刷新"已选 N 项"与全选框状态
@@ -131,6 +137,7 @@ private:
     QComboBox   *m_portCombo  = nullptr;
     QComboBox   *m_baudCombo  = nullptr;
     QPushButton *m_connectCcoBtn = nullptr;
+    QPushButton *m_runControlBtn = nullptr;
 
     // ===== 左：用例树 =====
     QTreeWidget *m_tree     = nullptr;
@@ -163,8 +170,8 @@ private:
     QLabel       *m_statLegend = nullptr;
 
     // ===== 底部状态栏 =====
-    QLabel *m_sbLogCount = nullptr, *m_sbCpu = nullptr,
-           *m_sbMem = nullptr, *m_sbTime = nullptr, *m_sbStatus = nullptr;
+    QLabel *m_sbLogCount = nullptr, *m_sbTime = nullptr,
+           *m_sbStatus = nullptr;
 
     // ===== 运行态 =====
     QTimer      *m_clock = nullptr;
